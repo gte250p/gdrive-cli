@@ -1,10 +1,11 @@
 package gdrive.cli
 
-import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow
+import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.JsonParser
 import com.google.api.client.json.jackson.JacksonFactory
 import org.apache.log4j.Logger
+import org.json.JSONObject
 
 import static gdrive.cli.GDriveCliMain.*
 
@@ -27,23 +28,27 @@ class AuthorizeModeHandler implements SystemModeHandler {
 
     static Logger logger = Logger.getLogger(AuthorizeModeHandler)
 
-    private static final String CLIENTSECRETS_LOCATION = "client-secrets.json";
+    private static final String CLIENTSECRETS_LOCATION = "/client-secrets.json";
     private static final String REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"; // Opens the code in a browser, to be copied and pasted in.
     private static final List<String> SCOPES = [
             "https://www.googleapis.com/auth/drive.file",
             "https://www.googleapis.com/auth/userinfo.email",
             "https://www.googleapis.com/auth/userinfo.profile"];
 
+
+    private GoogleClientSecrets clientSecrets = null;
+
     public AuthorizeModeHandler(){
-        try{
-            logger.debug("Reading client secrets...");
-            JacksonFactory jacksonFactory = new JacksonFactory();
-            JsonParser parser = jacksonFactory.createJsonParser( (InputStream) System.getResourceAsStream(CLIENTSECRETS_LOCATION));
-            ClientSecrets clientSecrets = parser.parse(ClientSecrets.class);
-            logger.info("Successfully read authURI: "+clientSecrets.web.auth_uri);
-        }catch(Throwable t){
-            logger.error("Error initializing AuthorizeModeHandler!", t);
-        }
+        logger.debug("Reading client secrets...");
+        String clientSecretsText = System.getResourceAsStream(CLIENTSECRETS_LOCATION).text;
+        logger.debug("Successfully read: \n[$clientSecretsText]");
+        if( clientSecretsText == null || clientSecretsText.trim().length() == 0 )
+            throw new NullPointerException("There is not any client secrets data.  Cannot establish connection to google.")
+
+        JacksonFactory factory = new JacksonFactory();
+        JsonParser parser = factory.createJsonParser(clientSecretsText);
+        clientSecrets = parser.parseAndClose(GoogleClientSecrets.class);
+        logger.debug("Client secrets: $clientSecrets")
     }
 
 
@@ -54,7 +59,8 @@ class AuthorizeModeHandler implements SystemModeHandler {
 
     @Override
     void handle() {
-
+        GoogleCredential credential = authorize();
+        logger.info("Your access token is: ["+credential.accessToken+"]");
     }//end handle()
 
 
@@ -64,25 +70,19 @@ class AuthorizeModeHandler implements SystemModeHandler {
     //==================================================================================================================
     //  Google's Code From: https://developers.google.com/+/domains/authentication/
     //==================================================================================================================
-    String getClientId() {
-        // TODO Read from client secrets...
-        return null;
-    }
-
-    String getClientSecret() {
-        // TODO Read from client secrets...
-        return null;
+    GoogleClientSecrets getClientSecrets() {
+        return clientSecrets;
     }
 
     def authorize() {
         GoogleAuthorizationCodeFlow flow = new GoogleAuthorizationCodeFlow.Builder(
-                new NetHttpTransport(), new JacksonFactory(), getClientId(), getClientSecret(), SCOPES)
+                new NetHttpTransport(), new JacksonFactory(), getClientSecrets(), SCOPES)
                 .setApprovalPrompt("force")
 
-                // Set the access type to offline so that the token can be refreshed.
-                // By default, the library will automatically refresh tokens when it
-                // can, but this can be turned off by setting
-                // dfp.api.refreshOAuth2Token=false in your ads.properties file.
+        // Set the access type to offline so that the token can be refreshed.
+        // By default, the library will automatically refresh tokens when it
+        // can, but this can be turned off by setting
+        // dfp.api.refreshOAuth2Token=false in your ads.properties file.
                 .setAccessType("offline").build();
 
         // This command-line server-side flow example requires the user to open the
@@ -94,6 +94,7 @@ class AuthorizeModeHandler implements SystemModeHandler {
         // options at https://developers.google.com/+/web/signin/
         String url = flow.newAuthorizationUrl().setRedirectUri(REDIRECT_URI).build();
         logger.info("Please open the following URL in your browser then type the authorization code:\n    $url");
+        logger.info("\nPlease enter your auth code: ");
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
         String code = br.readLine();
         // End of command line prompt for the authorization code.
@@ -104,32 +105,32 @@ class AuthorizeModeHandler implements SystemModeHandler {
         GoogleCredential credential = new GoogleCredential.Builder()
                 .setTransport(new NetHttpTransport())
                 .setJsonFactory(new JacksonFactory())
-                .setClientSecrets(getClientId(), getClientSecret())
+                .setClientSecrets(getClientSecrets())
                 .addRefreshListener(
-                    new CredentialRefreshListener() {
-                        @Override
-                        public void onTokenResponse(Credential credential, TokenResponse tokenResponse2) {
-                            // Handle success.
-                            logger.info("Credential was refreshed successfully.");
-                        }
-
-                        @Override
-                        public void onTokenErrorResponse(Credential credential, TokenErrorResponse tokenErrorResponse) {
-                            // Handle error.
-                            logger.error("Credential was not refreshed successfully. Redirect to error page or login screen.");
-                        }
+                new CredentialRefreshListener() {
+                    @Override
+                    public void onTokenResponse(Credential credential, TokenResponse tokenResponse2) {
+                        // Handle success.
+                        logger.info("Credential was refreshed successfully.");
                     }
-                )
-                // You can also add a credential store listener to have credentials
-                // stored automatically.
-                //.addRefreshListener(new CredentialStoreRefreshListener(userId, credentialStore))
+
+                    @Override
+                    public void onTokenErrorResponse(Credential credential, TokenErrorResponse tokenErrorResponse) {
+                        // Handle error.
+                        logger.error("Credential was not refreshed successfully. Redirect to error page or login screen.");
+                    }
+                }
+        )
+        // You can also add a credential store listener to have credentials
+        // stored automatically.
+        //.addRefreshListener(new CredentialStoreRefreshListener(userId, credentialStore))
                 .build();
 
-                // Set authorized credentials.
-                credential.setFromTokenResponse(tokenResponse);
-                // Though not necessary when first created, you can manually refresh the
-                // token, which is needed after 60 minutes.
-                credential.refreshToken();
+        // Set authorized credentials.
+        credential.setFromTokenResponse(tokenResponse);
+        // Though not necessary when first created, you can manually refresh the
+        // token, which is needed after 60 minutes.
+        credential.refreshToken();
 
         return credential;
     }//end authorize()
