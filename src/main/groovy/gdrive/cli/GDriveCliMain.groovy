@@ -26,7 +26,12 @@ class GDriveCliMain {
         long start = System.currentTimeMillis();
         parseArgs(args);
 
-        SystemModeHandler handler = resolveModeHandler();
+        SystemModeHandler handler = null;
+        try {
+            handler = resolveModeHandler();
+        }catch(Throwable t){
+            errorAndDie("Error while resolving mode handler for mode: ${SYSTEM_MODE}", t);
+        }
         if( !handler )
             errorAndDie("Unable to handle mode: @|red ${SYSTEM_MODE}|@.  See --help documentation.")
 
