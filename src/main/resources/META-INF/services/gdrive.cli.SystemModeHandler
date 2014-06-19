@@ -1,1 +1,2 @@
 gdrive.cli.SynchronizeModeHandler
+gdrive.cli.AuthorizeModeHandler

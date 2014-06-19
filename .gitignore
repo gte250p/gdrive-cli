@@ -2,3 +2,6 @@
 .gradle
 *.iml
 google-data
+build
+target
+gdrive-*

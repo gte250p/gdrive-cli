@@ -36,8 +36,11 @@ class AuthorizeModeHandler implements SystemModeHandler {
 
     public AuthorizeModeHandler(){
         try{
+            logger.debug("Reading client secrets...");
             JacksonFactory jacksonFactory = new JacksonFactory();
-            JsonParser parser = jacksonFactory.createJsonParser(System.getResourceAsStream(CLIENTSECRETS_LOCATION));
+            JsonParser parser = jacksonFactory.createJsonParser( (InputStream) System.getResourceAsStream(CLIENTSECRETS_LOCATION));
+            ClientSecrets clientSecrets = parser.parse(ClientSecrets.class);
+            logger.info("Successfully read authURI: "+clientSecrets.web.auth_uri);
         }catch(Throwable t){
             logger.error("Error initializing AuthorizeModeHandler!", t);
         }
