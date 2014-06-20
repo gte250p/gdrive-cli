@@ -1,5 +1,6 @@
 package gdrive.cli
 
+import gdrive.cli.config.GDriveConfig
 import org.apache.log4j.Logger
 import org.apache.log4j.PropertyConfigurator
 
@@ -16,6 +17,11 @@ class GDriveCliMain {
     static final String AUTH_MODE = "AUTHORIZE"
 
     static String SYSTEM_MODE = SYNC_MODE;
+    public static GDriveConfig CONFIG = null;
+    public static GDriveConfig getConfiguration(){
+        return CONFIG;
+    }
+
 
     /**
      * Method first called by the program on startup.
@@ -24,7 +30,14 @@ class GDriveCliMain {
      */
     public static void main(String[] args){
         long start = System.currentTimeMillis();
+        File lockFile = new File(".gdrive_cli.lock");
+        if( lockFile.exists() )
+            errorAndDie("Existing lock file '.gdrive_cli.lock', refusing to sync.  Please remove this file and try again.")
+        lockFile << "Start=${System.currentTimeMillis()}\n"
         parseArgs(args);
+
+        logger.debug("Reading gdrive configuration...");
+        CONFIG = new GDriveConfig();
 
         SystemModeHandler handler = null;
         try {
@@ -40,6 +53,8 @@ class GDriveCliMain {
 
         long stop = System.currentTimeMillis();
         logger.info("Successfully executed gdrive-cli in @|cyan ${(int) (((double) (stop-start)) / 1000.0d)}|@ seconds")
+
+        lockFile.delete();
     }//end main
 
 
@@ -82,7 +97,6 @@ class GDriveCliMain {
             SYSTEM_MODE = AUTH_MODE;
             logger.debug("Setting system mode to '$AUTH_MODE' - in otherwords, not going to synchronize but instead auth with google.")
         }
-
     }
 
     public static void exitGracefully( String msg ){
@@ -100,5 +114,5 @@ class GDriveCliMain {
     }
 
 
-
 }//end GDriveCliMain()
+

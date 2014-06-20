@@ -4,8 +4,14 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.JsonParser
 import com.google.api.client.json.jackson.JacksonFactory
+import com.google.api.services.drive.Drive
+import com.google.api.services.drive.DriveScopes
+import com.google.api.services.drive.model.About
+import com.google.api.services.drive.model.FileList
+import com.google.api.services.drive.model.Permission
+import gdrive.cli.config.GDriveConfig
+import org.apache.commons.lang.StringUtils
 import org.apache.log4j.Logger
-import org.json.JSONObject
 
 import static gdrive.cli.GDriveCliMain.*
 
@@ -28,29 +34,11 @@ class AuthorizeModeHandler implements SystemModeHandler {
 
     static Logger logger = Logger.getLogger(AuthorizeModeHandler)
 
-    private static final String CLIENTSECRETS_LOCATION = "/client-secrets.json";
     private static final String REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"; // Opens the code in a browser, to be copied and pasted in.
-    private static final List<String> SCOPES = [
-            "https://www.googleapis.com/auth/drive.file",
-            "https://www.googleapis.com/auth/userinfo.email",
-            "https://www.googleapis.com/auth/userinfo.profile"];
-
-
-    private GoogleClientSecrets clientSecrets = null;
-
-    public AuthorizeModeHandler(){
-        logger.debug("Reading client secrets...");
-        String clientSecretsText = System.getResourceAsStream(CLIENTSECRETS_LOCATION).text;
-        logger.debug("Successfully read: \n[$clientSecretsText]");
-        if( clientSecretsText == null || clientSecretsText.trim().length() == 0 )
-            throw new NullPointerException("There is not any client secrets data.  Cannot establish connection to google.")
-
-        JacksonFactory factory = new JacksonFactory();
-        JsonParser parser = factory.createJsonParser(clientSecretsText);
-        clientSecrets = parser.parseAndClose(GoogleClientSecrets.class);
-        logger.debug("Client secrets: $clientSecrets")
-    }
-
+    private static final Collection<String> SCOPES = [
+            "profile",
+            "email"
+    ];
 
     @Override
     String getModeSupported() {
@@ -59,8 +47,37 @@ class AuthorizeModeHandler implements SystemModeHandler {
 
     @Override
     void handle() {
-        GoogleCredential credential = authorize();
-        logger.info("Your access token is: ["+credential.accessToken+"]");
+        String refreshToken = GDriveCliMain.CONFIG.getRefreshToken();
+        if( StringUtils.isNotEmpty(refreshToken) ){
+            logger.debug("A refreshToken: @|cyan $refreshToken|@ was found.  Using this to access drive...")
+            GoogleCredential credential = new GoogleCredential.Builder()
+                    .setClientSecrets(getClientSecrets())
+                    .setJsonFactory(new JacksonFactory())
+                    .setTransport(new NetHttpTransport())
+                    .build();
+            credential.setRefreshToken(refreshToken);
+            logger.debug("Calling refresh token...")
+            credential.refreshToken();
+
+            // TODO Everything below here is just to test we made a connection appropriately.  If we connected ok, then we're done.
+//            logger.debug("Constructing new drive service...");
+//            Drive service = new Drive.Builder(new NetHttpTransport(), new JacksonFactory(), credential).setApplicationName(Constants.APP_NAME).build();
+//
+//            Drive.Files.List filesReq = service.files().list();
+//            filesReq.setMaxResults(10);
+//            FileList files = null;
+//            logger.debug("Permissions response: "+permissions);
+
+            logger.info("Successfully refreshed GDrive CLI's google access token.")
+            return;
+        }
+
+
+        GoogleCredential credential = buildCredentialTheHardWay();
+        logger.info("Your refresh token is: ["+credential.refreshToken+"], access token: ${credential.accessToken}");
+        GDriveCliMain.CONFIG.gdriveCliJson.put(Constants.REFRESH_TOKEN_KEY, credential.refreshToken);
+        GDriveCliMain.CONFIG.saveGDriveCliJson();
+
     }//end handle()
 
 
@@ -70,13 +87,20 @@ class AuthorizeModeHandler implements SystemModeHandler {
     //==================================================================================================================
     //  Google's Code From: https://developers.google.com/+/domains/authentication/
     //==================================================================================================================
-    GoogleClientSecrets getClientSecrets() {
-        return clientSecrets;
+    Collection<String> buildScopes(){
+        def scopes = []
+        scopes.addAll(SCOPES);
+        scopes.addAll(DriveScopes.DRIVE);
+        return scopes;
     }
 
-    def authorize() {
+    GoogleClientSecrets getClientSecrets() {
+        return GDriveCliMain.CONFIG.clientSecrets;
+    }
+
+    GoogleCredential buildCredentialTheHardWay() {
         GoogleAuthorizationCodeFlow flow = new GoogleAuthorizationCodeFlow.Builder(
-                new NetHttpTransport(), new JacksonFactory(), getClientSecrets(), SCOPES)
+                new NetHttpTransport(), new JacksonFactory(), getClientSecrets(), buildScopes())
                 .setApprovalPrompt("force")
 
         // Set the access type to offline so that the token can be refreshed.
@@ -98,29 +122,28 @@ class AuthorizeModeHandler implements SystemModeHandler {
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
         String code = br.readLine();
         // End of command line prompt for the authorization code.
-        logger.info("Authorization code: [@|cyan "+code?.trim()+"|@]");
+        logger.debug("Authorization code: [@|cyan "+code?.trim()+"|@]");
 
-        logger.debug("Testing...");
+        logger.debug("Converting authorization code into credential...");
         GoogleTokenResponse tokenResponse = flow.newTokenRequest(code).setRedirectUri(REDIRECT_URI).execute();
         GoogleCredential credential = new GoogleCredential.Builder()
                 .setTransport(new NetHttpTransport())
                 .setJsonFactory(new JacksonFactory())
                 .setClientSecrets(getClientSecrets())
                 .addRefreshListener(
-                new CredentialRefreshListener() {
-                    @Override
-                    public void onTokenResponse(Credential credential, TokenResponse tokenResponse2) {
-                        // Handle success.
-                        logger.info("Credential was refreshed successfully.");
-                    }
+                    new CredentialRefreshListener() {
+                        @Override
+                        public void onTokenResponse(Credential credential, TokenResponse tokenResponse2) {
+                            // Handle success.
+                            logger.info("Credential was refreshed successfully.");
+                        }
 
-                    @Override
-                    public void onTokenErrorResponse(Credential credential, TokenErrorResponse tokenErrorResponse) {
-                        // Handle error.
-                        logger.error("Credential was not refreshed successfully. Redirect to error page or login screen.");
-                    }
-                }
-        )
+                        @Override
+                        public void onTokenErrorResponse(Credential credential, TokenErrorResponse tokenErrorResponse) {
+                            // Handle error.
+                            logger.error("Credential was not refreshed successfully. Redirect to error page or login screen.");
+                        }
+                    })
         // You can also add a credential store listener to have credentials
         // stored automatically.
         //.addRefreshListener(new CredentialStoreRefreshListener(userId, credentialStore))
