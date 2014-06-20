@@ -20,6 +20,8 @@ dependencies {
     compile 'com.google.http-client:google-http-client-jackson:1.18.0-rc'
 //    compile 'com.google.http-client:google-http-client-jackson2:1.18.0-rc'
 
+    compile 'org.json:json:20140107'  // I added this because google's json stuff is wacky and doesn't work as I expect it to.
+    compile 'commons-lang:commons-lang:2.6'
 
 
     runtime 'commons-cli:commons-cli:1.2'
