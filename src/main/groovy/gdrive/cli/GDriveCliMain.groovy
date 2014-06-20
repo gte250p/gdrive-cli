@@ -30,10 +30,6 @@ class GDriveCliMain {
      */
     public static void main(String[] args){
         long start = System.currentTimeMillis();
-        File lockFile = new File(".gdrive_cli.lock");
-        if( lockFile.exists() )
-            errorAndDie("Existing lock file '.gdrive_cli.lock', refusing to sync.  Please remove this file and try again.")
-        lockFile << "Start=${System.currentTimeMillis()}\n"
         parseArgs(args);
 
         logger.debug("Reading gdrive configuration...");
@@ -54,7 +50,7 @@ class GDriveCliMain {
         long stop = System.currentTimeMillis();
         logger.info("Successfully executed gdrive-cli in @|cyan ${(int) (((double) (stop-start)) / 1000.0d)}|@ seconds")
 
-        lockFile.delete();
+        cleanUp();
     }//end main
 
 
@@ -101,18 +97,25 @@ class GDriveCliMain {
 
     public static void exitGracefully( String msg ){
         logger.info(msg);
+        cleanUp();
         System.exit(0);
     }
 
     public static void errorAndDie( String msg ){
         logger.error(msg);
+        cleanUp();
         System.exit(1);
     }
     public static void errorAndDie( String msg, Throwable t ){
         logger.error(msg, t);
+        cleanUp();
         System.exit(1);
     }
 
+    protected static void cleanUp(){
+        if( CONFIG != null )
+            CONFIG.cleanUp();
+    }
 
 }//end GDriveCliMain()
 

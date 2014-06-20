@@ -4,6 +4,8 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets
 import com.google.api.client.json.JsonParser
 import com.google.api.client.json.jackson.JacksonFactory
 import gdrive.cli.Constants
+import gdrive.cli.GDriveCliMain
+import org.apache.commons.io.FileUtils
 import org.apache.log4j.Logger
 import org.json.JSONException
 import org.json.JSONObject
@@ -21,6 +23,13 @@ class GDriveConfig {
     static Logger logger = Logger.getLogger(GDriveConfig);
 
     public GDriveConfig(){
+
+        logger.debug("Checking/creating lock file...")
+        lockFile = new File(".gdrive_cli.lock");
+        if( lockFile.exists() )
+            GDriveCliMain.errorAndDie("Existing lock file '.gdrive_cli.lock', refusing to sync.  Please remove this file and try again.")
+        lockFile << "Start=${System.currentTimeMillis()}\n"
+
         logger.debug("Parsing grive state file (if exists)...")
         gdriveCliFile = new File(GDRIVE_CLI_FILE);
         if( gdriveCliFile.exists() )
@@ -43,8 +52,16 @@ class GDriveConfig {
         clientSecrets = parser.parseAndClose(GoogleClientSecrets.class);
         logger.debug("Client secrets: $clientSecrets")
 
+        logger.debug("Setting up drive cache directory...")
+        driveCacheDir = new File(".drive-cache");
+        if( driveCacheDir.exists() )
+            FileUtils.deleteDirectory(driveCacheDir); // TODO Should we save as much cache as possible?  Avoid server hits...
+        driveCacheDir.mkdirs();
+
     }//end GDriveConfig()
 
+    public File lockFile;
+    public File driveCacheDir;
 
     public File gdriveCliFile = null;
     public JSONObject gdriveCliJson = null;
@@ -90,6 +107,16 @@ class GDriveConfig {
         c.setTimeInMillis(millisSinceEpoch);
         return c;
     }
+
+
+
+
+
+    public void cleanUp(){
+        logger.debug("Cleaning up configuration data...");
+        FileUtils.deleteDirectory(driveCacheDir);
+        lockFile.delete();
+    }//end cleanUp();
 
 
 

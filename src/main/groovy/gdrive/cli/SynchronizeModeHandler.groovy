@@ -4,6 +4,7 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleCredential
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.jackson.JacksonFactory
 import com.google.api.services.drive.Drive
+import com.google.api.services.drive.model.File as GoogleFile;
 import com.google.api.services.drive.model.FileList
 import org.apache.commons.lang.StringUtils
 import org.apache.log4j.Logger
@@ -40,11 +41,9 @@ class SynchronizeModeHandler implements SystemModeHandler {
         logger.debug("Connecting to google drive...");
         Drive drive = buildDrive();
 
-        File driveCache = new File(".", ".drive_cache");
-        driveCache.mkdirs();
+//        int filesChangedInDrive = cacheGoogleDriveChanges(drive);
 
-        int filesChangedInDrive = cacheGoogleDriveChanges(drive, driveCache);
-
+        GoogleFile root = getRootDirectory(drive);
         // TODO Finish synchronization
 
         logger.info("Synchronization completed successfully.")
@@ -53,7 +52,14 @@ class SynchronizeModeHandler implements SystemModeHandler {
     //==================================================================================================================
     //  Private Helper Methods
     //==================================================================================================================
-    private int cacheGoogleDriveChanges(Drive drive, File driveCache){
+    private GoogleFile getRootDirectory(Drive drive){
+        GoogleFile root = drive.files().get("root").execute();
+        logger.info("Root file information: \n"+root.toPrettyString());
+        return root;
+    }//end getRootDirectory()
+
+
+    private int cacheGoogleDriveChanges(Drive drive){
         int filesChanged = 0;
         Calendar lastSyncDate = GDriveCliMain.CONFIG.getLastSyncDate(); // Should be in GMT with the server.
         TimeZone tz = TimeZone.getTimeZone("UTC");
@@ -77,7 +83,7 @@ class SynchronizeModeHandler implements SystemModeHandler {
             filesChanged += fileList.getItems().size();
 
             logger.debug("Writing file list page @|cyan $pageCounter|@ to disk...");
-            File currentFileListPage = new File(driveCache, "filelist.page.${formatPageNumber(pageCounter, 6)}")
+            File currentFileListPage = new File(GDriveCliMain.CONFIG.driveCacheDir, "filelist.page.${formatPageNumber(pageCounter, 6)}")
             currentFileListPage << fileList.toPrettyString();
 
             nextPageToken = fileList.getNextPageToken();
