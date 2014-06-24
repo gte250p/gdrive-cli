@@ -22,4 +22,7 @@ class Constants {
     public static final String REFRESH_TOKEN_KEY = "refresh_token";
     public static final String LAST_SYNC_KEY = "last_sync_time"
 
+
+    public static final Integer MAX_GOOGLE_FILES_AT_ONE_TIME = 500; // Need to tweak this to avoid errors with google servers.
+
 }//end Constants()

@@ -5,11 +5,15 @@ import com.google.api.client.json.JsonParser
 import com.google.api.client.json.jackson.JacksonFactory
 import gdrive.cli.Constants
 import gdrive.cli.GDriveCliMain
+import groovy.sql.Sql
 import org.apache.commons.io.FileUtils
 import org.apache.log4j.Logger
 import org.json.JSONException
 import org.json.JSONObject
 import org.json.JSONWriter
+
+import java.sql.Connection
+import java.sql.DriverManager
 
 import static gdrive.cli.Constants.*;
 
@@ -58,7 +62,11 @@ class GDriveConfig {
             FileUtils.deleteDirectory(driveCacheDir); // TODO Should we save as much cache as possible?  Avoid server hits...
         driveCacheDir.mkdirs();
 
+        setupDatabase();
+
     }//end GDriveConfig()
+
+    public Sql h2db;
 
     public File lockFile;
     public File driveCacheDir;
@@ -119,5 +127,48 @@ class GDriveConfig {
     }//end cleanUp();
 
 
+
+    //==================================================================================================================
+    //  Private Helper Methods
+    //==================================================================================================================
+    private void setupDatabase() {
+        logger.debug("Creating in-memory database...");
+        Class.forName("org.h2.Driver");
+        Connection conn = DriverManager.getConnection("jdbc:h2:mem:");
+        h2db = new Sql(conn);
+//        h2db.executeUpdate(CREATE_GOOGLE_FILES_TABLE)
+        h2db.executeUpdate(REMOTE_DIRS_TABLE)
+    }//end setupDatabase()
+
+    static String CREATE_GOOGLE_FILES_TABLE = """
+CREATE TABLE GOOGLE_FILE (
+    ID VARCHAR(64) PRIMARY KEY,
+    CREATE_DATE TIMESTAMP,
+    ETAG VARCHAR(255),
+    EXTENSION VARCHAR(25),
+    SIZE BIGINT,
+    IS_FILE BOOLEAN,
+    IS_DIRECTORY BOOLEAN,
+    TRASHED BOOLEAN,
+    MD5CHECKSUM VARCHAR(255),
+    MIME_TYPE VARCHAR(255),
+    MODIFIED_DATE TIMESTAMP,
+    SHARED BOOLEAN,
+    TITLE VARCHAR(255),
+    VERSION BIGINT,
+    PARENT_ID VARCHAR(255),
+    IS_ROOT BOOLEAN
+)
+"""
+
+    static String REMOTE_DIRS_TABLE = """
+CREATE TABLE REMOTE_DIR (
+    ID VARCHAR(64) PRIMARY KEY,
+    TRASHED BOOLEAN,
+    MODIFIED_DATE TIMESTAMP,
+    SHARED BOOLEAN,
+    TITLE VARCHAR(255)
+)
+"""
 
 }//end GDriveConfig()

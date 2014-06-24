@@ -41,25 +41,33 @@ class SynchronizeModeHandler implements SystemModeHandler {
         logger.debug("Connecting to google drive...");
         Drive drive = buildDrive();
 
-//        int filesChangedInDrive = cacheGoogleDriveChanges(drive);
-
+        logger.debug("Getting root google file...")
         GoogleFile root = getRootDirectory(drive);
-        // TODO Finish synchronization
+
+//        GDriveCliMain.CONFIG.h2db.executeInsert("INSERT INTO REMOTE_DIR(ID, TRASHED, MODIFIED_DATE, SHARED, TITLE) " +
+//                                                                "values(?,  ?,       ?,             ?,      ?)",
+//                [root.getId(), root.getLabels().getTrashed(), toDate(root.getModifiedDate().value, root.getShared(), root.getTitle())])
+
+        diffFolder( root, new File(".") );
 
         logger.info("Synchronization completed successfully.")
     }//end handle()
+
+    void diffFolder( GoogleFile remoteFolder, File localFolder ){
+
+    }//end diffFolder()
 
     //==================================================================================================================
     //  Private Helper Methods
     //==================================================================================================================
     private GoogleFile getRootDirectory(Drive drive){
-        GoogleFile root = drive.files().get("root").execute();
-        logger.info("Root file information: \n"+root.toPrettyString());
+        GoogleFile root = ExecutionManager.execute(drive.files().get("root"));
+        logger.debug("Root file information: \n"+root.toPrettyString());
         return root;
     }//end getRootDirectory()
 
 
-    private int cacheGoogleDriveChanges(Drive drive){
+    private int cacheGoogleDriveData(Drive drive){
         int filesChanged = 0;
         Calendar lastSyncDate = GDriveCliMain.CONFIG.getLastSyncDate(); // Should be in GMT with the server.
         TimeZone tz = TimeZone.getTimeZone("UTC");
@@ -76,22 +84,64 @@ class SynchronizeModeHandler implements SystemModeHandler {
             pageCounter++;
             logger.debug("Listing files...");
             Drive.Files.List listOp = drive.files().list();
-            listOp.setMaxResults(100);
+            listOp.setMaxResults(Constants.MAX_GOOGLE_FILES_AT_ONE_TIME);
             listOp.setQ(afterModTimeQuery);
             listOp.setPageToken(nextPageToken);
-            FileList fileList = listOp.execute();
+            FileList fileList = ExecutionManager.execute(listOp);
             filesChanged += fileList.getItems().size();
 
-            logger.debug("Writing file list page @|cyan $pageCounter|@ to disk...");
-            File currentFileListPage = new File(GDriveCliMain.CONFIG.driveCacheDir, "filelist.page.${formatPageNumber(pageCounter, 6)}")
-            currentFileListPage << fileList.toPrettyString();
+            for( GoogleFile file : fileList.getItems() ){
+                cache(file);
+            }
+
+//            logger.debug("Writing file list page @|cyan $pageCounter|@ to disk...");
+//            File currentFileListPage = new File(GDriveCliMain.CONFIG.driveCacheDir, "filelist.page.${formatPageNumber(pageCounter, 6)}")
+//            currentFileListPage << fileList.toPrettyString();
 
             nextPageToken = fileList.getNextPageToken();
             if (nextPageToken == null)
                 break;
         }
+
+        int count = -1;
+        GDriveCliMain.CONFIG.h2db.firstRow("select count(*) as count from GOOGLE_FILE") {
+            count = it.count;
+        }
+        logger.info("Successfully cached @|cyan ${count}|@ files from google drive.")
+
         return filesChanged;
     }//end cacheGoogleDriveChanges()
+
+    private void cache(GoogleFile file){
+        logger.debug("Inserting file[${file.getTitle()}]...")
+        GDriveCliMain.CONFIG.h2db.executeUpdate(
+                "INSERT INTO GOOGLE_FILE (ID, CREATE_DATE, ETAG, EXTENSION, SIZE, IS_FILE, IS_DIRECTORY, TRASHED, MD5CHECKSUM, MIME_TYPE, MODIFIED_DATE, SHARED, TITLE, VERSION, PARENT_ID, IS_ROOT) " +
+                "VALUES (                 ?,  ?,           ?,    ?,         ?,    ?,       ?,            ?,       ?,           ?,         ?,             ?,      ?,     ?,       ?,         false)",
+                [file.getId(),
+                    toDate(file.getCreatedDate().getValue()),
+                    file.getEtag(),
+                    file.getFileExtension(),
+                    file.getFileSize(),
+                    !file.getMimeType().equalsIgnoreCase("application/vnd.google-apps.folder"),
+                    file.getMimeType().equalsIgnoreCase("application/vnd.google-apps.folder"),
+                    file.getLabels().getTrashed(),
+                    file.getMd5Checksum(),
+                    file.getMimeType(),
+                    toDate(file.getModifiedDate().getValue()),
+                    file.getShared(),
+                    file.getTitle(),
+                    file.getVersion(),
+                    file.getParents()?.get(0).getId()
+                ]
+        )
+        logger.debug("Insert successful")
+    }//end cache()
+
+    private Date toDate( Long timestamp ){
+        Calendar instance = Calendar.getInstance();
+        instance.setTimeInMillis(timestamp);
+        return instance.getTime();
+    }
 
 
     String formatPageNumber(int pageNum, int leadingZeros){

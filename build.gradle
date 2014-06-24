@@ -19,6 +19,7 @@ dependencies {
     compile 'com.google.apis:google-api-services-oauth2:v2-rev70-1.18.0-rc'
     compile 'com.google.http-client:google-http-client-jackson:1.18.0-rc'
 //    compile 'com.google.http-client:google-http-client-jackson2:1.18.0-rc'
+    compile 'com.h2database:h2:1.4.179' // h2 database is used for storing file information.
 
     compile 'org.json:json:20140107'  // I added this because google's json stuff is wacky and doesn't work as I expect it to.
     compile 'commons-lang:commons-lang:2.6'
