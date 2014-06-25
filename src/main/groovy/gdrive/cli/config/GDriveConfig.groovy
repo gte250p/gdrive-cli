@@ -99,6 +99,16 @@ class GDriveConfig {
         }
     }//end getRefreshToken()
 
+    public Integer getMaxRetries() {
+        try {
+            return gdriveCliJson?.getInt(MAX_REQUEST_RETRY_KEY);
+        }catch(JSONException jsone){
+            if( jsone.message.equals("JSONObject[\"max_request_retries\"] not found.") )
+                return 10; // Default to 10
+            throw jsone;
+        }
+    }
+
     public void saveGDriveCliJson() {
         logger.debug("Saving GDriveCliJSON...")
         FileWriter writer = new FileWriter(gdriveCliFile, false);
@@ -134,9 +144,9 @@ class GDriveConfig {
     private void setupDatabase() {
         logger.debug("Creating in-memory database...");
         Class.forName("org.h2.Driver");
-        Connection conn = DriverManager.getConnection("jdbc:h2:mem:");
+        Connection conn = DriverManager.getConnection("jdbc:h2:./.drive-cache/h2db");
         h2db = new Sql(conn);
-//        h2db.executeUpdate(CREATE_GOOGLE_FILES_TABLE)
+        h2db.executeUpdate(CREATE_GOOGLE_FILES_TABLE)
         h2db.executeUpdate(REMOTE_DIRS_TABLE)
     }//end setupDatabase()
 
@@ -157,7 +167,8 @@ CREATE TABLE GOOGLE_FILE (
     TITLE VARCHAR(255),
     VERSION BIGINT,
     PARENT_ID VARCHAR(255),
-    IS_ROOT BOOLEAN
+    IS_ROOT BOOLEAN,
+    PROCESSED BOOLEAN
 )
 """
 
