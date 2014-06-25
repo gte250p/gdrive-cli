@@ -21,8 +21,9 @@ class Constants {
 
     public static final String REFRESH_TOKEN_KEY = "refresh_token";
     public static final String LAST_SYNC_KEY = "last_sync_time"
+    public static final String MAX_REQUEST_RETRY_KEY = "max_request_retries";
 
 
-    public static final Integer MAX_GOOGLE_FILES_AT_ONE_TIME = 500; // Need to tweak this to avoid errors with google servers.
+    public static final Integer MAX_GOOGLE_FILES_AT_ONE_TIME = 1000; // Supports values between 1-1000.  See https://developers.google.com/drive/v2/reference/files/list
 
 }//end Constants()
