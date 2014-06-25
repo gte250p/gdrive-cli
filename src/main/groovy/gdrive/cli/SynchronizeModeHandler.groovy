@@ -4,8 +4,11 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleCredential
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.jackson.JacksonFactory
 import com.google.api.services.drive.Drive
+import com.google.api.services.drive.model.ChildList
+import com.google.api.services.drive.model.ChildReference
 import com.google.api.services.drive.model.File as GoogleFile;
 import com.google.api.services.drive.model.FileList
+import org.apache.commons.io.FileUtils
 import org.apache.commons.lang.StringUtils
 import org.apache.log4j.Logger
 
@@ -41,21 +44,16 @@ class SynchronizeModeHandler implements SystemModeHandler {
         logger.debug("Connecting to google drive...");
         Drive drive = buildDrive();
 
-        logger.debug("Getting root google file...")
+        logger.debug("Caching all google remote files...")
+        int filesCached = cacheGoogleDriveData(drive);
+
+        logger.debug("Marking root directory...");
         GoogleFile root = getRootDirectory(drive);
-
-//        GDriveCliMain.CONFIG.h2db.executeInsert("INSERT INTO REMOTE_DIR(ID, TRASHED, MODIFIED_DATE, SHARED, TITLE) " +
-//                                                                "values(?,  ?,       ?,             ?,      ?)",
-//                [root.getId(), root.getLabels().getTrashed(), toDate(root.getModifiedDate().value, root.getShared(), root.getTitle())])
-
-        diffFolder( root, new File(".") );
+        GDriveCliMain.CONFIG.h2db.executeUpdate("update GOOGLE_FILE set IS_ROOT = true where ID = ?", [root.getId()]);
 
         logger.info("Synchronization completed successfully.")
     }//end handle()
 
-    void diffFolder( GoogleFile remoteFolder, File localFolder ){
-
-    }//end diffFolder()
 
     //==================================================================================================================
     //  Private Helper Methods
@@ -99,13 +97,13 @@ class SynchronizeModeHandler implements SystemModeHandler {
 //            currentFileListPage << fileList.toPrettyString();
 
             nextPageToken = fileList.getNextPageToken();
-            if (nextPageToken == null)
+//            if (nextPageToken == null)
                 break;
         }
 
         int count = -1;
-        GDriveCliMain.CONFIG.h2db.firstRow("select count(*) as count from GOOGLE_FILE") {
-            count = it.count;
+        GDriveCliMain.CONFIG.h2db.eachRow("select count(*) as count from GOOGLE_FILE") { row ->
+            count = row.count;
         }
         logger.info("Successfully cached @|cyan ${count}|@ files from google drive.")
 
@@ -113,28 +111,30 @@ class SynchronizeModeHandler implements SystemModeHandler {
     }//end cacheGoogleDriveChanges()
 
     private void cache(GoogleFile file){
-        logger.debug("Inserting file[${file.getTitle()}]...")
+        // First, we delete the row if it exists in the database already...
+        GDriveCliMain.CONFIG.h2db.executeUpdate("DELETE from GOOGLE_FILE where ID = ?", [file.getId()]);
+
         GDriveCliMain.CONFIG.h2db.executeUpdate(
-                "INSERT INTO GOOGLE_FILE (ID, CREATE_DATE, ETAG, EXTENSION, SIZE, IS_FILE, IS_DIRECTORY, TRASHED, MD5CHECKSUM, MIME_TYPE, MODIFIED_DATE, SHARED, TITLE, VERSION, PARENT_ID, IS_ROOT) " +
-                "VALUES (                 ?,  ?,           ?,    ?,         ?,    ?,       ?,            ?,       ?,           ?,         ?,             ?,      ?,     ?,       ?,         false)",
+                "INSERT INTO GOOGLE_FILE (ID, CREATE_DATE, ETAG, EXTENSION, SIZE, IS_FILE, IS_DIRECTORY, TRASHED, MD5CHECKSUM, MIME_TYPE, MODIFIED_DATE, SHARED, TITLE, VERSION, PARENT_ID, IS_ROOT, PROCESSED) " +
+                        "VALUES (                 ?,  ?,           ?,    ?,         ?,    ?,       ?,            ?,       ?,           ?,         ?,             ?,      ?,     ?,       ?,         false,   false)",
                 [file.getId(),
-                    toDate(file.getCreatedDate().getValue()),
-                    file.getEtag(),
-                    file.getFileExtension(),
-                    file.getFileSize(),
-                    !file.getMimeType().equalsIgnoreCase("application/vnd.google-apps.folder"),
-                    file.getMimeType().equalsIgnoreCase("application/vnd.google-apps.folder"),
-                    file.getLabels().getTrashed(),
-                    file.getMd5Checksum(),
-                    file.getMimeType(),
-                    toDate(file.getModifiedDate().getValue()),
-                    file.getShared(),
-                    file.getTitle(),
-                    file.getVersion(),
-                    file.getParents()?.get(0).getId()
-                ]
-        )
-        logger.debug("Insert successful")
+                 toDate(file.getCreatedDate().getValue()),
+                 file.getEtag(),
+                 file.getFileExtension(),
+                 file.getFileSize(),
+                 !file.getMimeType().equalsIgnoreCase("application/vnd.google-apps.folder"),
+                 file.getMimeType().equalsIgnoreCase("application/vnd.google-apps.folder"),
+                 file.getLabels().getTrashed(),
+                 file.getMd5Checksum(),
+                 file.getMimeType(),
+                 toDate(file.getModifiedDate().getValue()),
+                 file.getShared(),
+                 file.getTitle(),
+                 file.getVersion(),
+                 file.getParents()?.isEmpty() ? null : file.getParents()?.get(0).getId()
+                ]);
+        logger.debug("Successfully inserted cached file[@|cyan ${file.getId()}|@:@|blue ${FileUtils.byteCountToDisplaySize(file.getFileSize() ?: 0l)}|@:@|green ${file.getTitle()}|@]...")
+
     }//end cache()
 
     private Date toDate( Long timestamp ){
